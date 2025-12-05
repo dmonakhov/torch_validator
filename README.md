@@ -221,7 +221,62 @@ python examples/train_with_validation.py --mode record --output golden.json --st
 python examples/train_with_validation.py --mode validate --golden golden.json --steps 50 --inject-error
 ```
 
+## Stress Tests
+
+Standalone stress tests to expose hardware faults without full training setup.
+
+### Available Tests
+
+| Test | Purpose | Distributed |
+|------|---------|-------------|
+| `memory` | HBM bandwidth saturation | No |
+| `nccl_allreduce` | AllReduce collective stress | Yes |
+| `nccl_mixed` | Combined NCCL patterns | Yes |
+| `fsdp_pattern` | FSDP communication simulation | Yes |
+| `transformer` | Minimal LLaMA3-like model + FSDP | Yes |
+
+### Usage
+
+```bash
+# Record golden on known-good node
+torchrun --nproc_per_node=8 -m torch_validator.stress_tests.runner \
+    --test transformer --mode quick --output golden/
+
+# Validate on suspected node
+torchrun --nproc_per_node=8 -m torch_validator.stress_tests.runner \
+    --test transformer --mode quick --validate --golden golden/
+
+# Run quick validation suite
+torchrun --nproc_per_node=8 -m torch_validator.stress_tests.runner \
+    --test quick_suite --mode quick --validate --golden golden/
+
+# Single-GPU memory test (no distributed)
+python -m torch_validator.stress_tests.runner --test memory --mode quick --output golden/
+
+# With GPU monitoring (requires pynvml)
+torchrun --nproc_per_node=8 -m torch_validator.stress_tests.runner \
+    --test transformer --mode long --nvml --output golden/
+
+# List all available tests
+python -m torch_validator.stress_tests.runner --list
+```
+
+### Duration Modes
+
+- `--mode quick`: 600 seconds (10 minutes)
+- `--mode long`: 3600 seconds (1 hour)
+- `--duration N`: Override with custom duration in seconds
+
+### Test Groups
+
+- `all`: All tests
+- `quick_suite`: memory, nccl_mixed, fsdp_layer, transformer
+- `local`: Single-GPU tests (memory, dense_local)
+- `nccl_tests`: All NCCL tests
+- `fsdp_tests`: All FSDP tests
+
 ## Requirements
 
 - Python >= 3.9
 - PyTorch >= 2.0.0
+- pynvml (optional, for GPU monitoring)

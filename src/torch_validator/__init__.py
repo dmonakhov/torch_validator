@@ -23,6 +23,13 @@ Usage:
 from torch_validator.verifier import GoldenVerifier, ValidationResult
 from torch_validator.metrics import MetricsCollector
 from torch_validator.deterministic import set_seed, set_deterministic_mode, get_seed_state
+from torch_validator.env_fingerprint import (
+    capture_fingerprint,
+    save_fingerprint,
+    load_fingerprint,
+    compare_fingerprints,
+    EnvFingerprint,
+)
 
 __version__ = "0.1.0"
 __all__ = [
@@ -32,4 +39,9 @@ __all__ = [
     "set_seed",
     "set_deterministic_mode",
     "get_seed_state",
+    "capture_fingerprint",
+    "save_fingerprint",
+    "load_fingerprint",
+    "compare_fingerprints",
+    "EnvFingerprint",
 ]
