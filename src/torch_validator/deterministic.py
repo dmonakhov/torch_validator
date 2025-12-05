@@ -114,6 +114,9 @@ def set_deterministic_mode(
     # Set seeds first
     state = set_seed(seed)
 
+    # Python hash seed (from torchtitan)
+    os.environ["PYTHONHASHSEED"] = str(seed % 2**32)
+
     # cuDNN deterministic (slower)
     if hasattr(torch.backends, "cudnn"):
         torch.backends.cudnn.deterministic = cudnn_deterministic
@@ -125,6 +128,23 @@ def set_deterministic_mode(
     except Exception:
         # Older PyTorch versions
         pass
+
+    # Inductor/Triton determinism (for torch.compile)
+    try:
+        torch._inductor.config.deterministic_algorithms = True
+    except (AttributeError, ModuleNotFoundError):
+        pass
+
+    # Disable non-deterministic SDPA backends
+    # Flash/cuDNN attention have non-deterministic backward pass
+    if torch.cuda.is_available():
+        try:
+            torch.backends.cuda.enable_flash_sdp(False)
+            torch.backends.cuda.enable_cudnn_sdp(False)
+            torch.backends.cuda.enable_mem_efficient_sdp(True)
+            torch.backends.cuda.enable_math_sdp(True)
+        except AttributeError:
+            pass
 
     return state
 
