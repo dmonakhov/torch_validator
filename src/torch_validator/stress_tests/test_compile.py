@@ -253,8 +253,12 @@ class CompileDeterminismTest(StressTest):
         set_cublas_workspace()  # Must be called before CUDA ops
         set_deterministic_mode(seed=self.config.seed, warn_only=False)
 
-        # Create model
+        # Create model on CPU first with fixed seed for cross-host reproducibility
+        # This ensures all hosts start with identical weights before FSDP sharding
+        set_seed(self.config.seed)  # Reset seed immediately before model creation
         model = CompileTestModel(self.config)
+
+        # Move to GPU after weights are initialized
         model = model.to(device=device, dtype=self.config.torch_dtype)
 
         # Apply torch.compile if enabled
