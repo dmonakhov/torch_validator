@@ -111,6 +111,9 @@ def set_deterministic_mode(
         - CUBLAS_WORKSPACE_CONFIG=:4096:8 (or :16:8)
         - CUDA_LAUNCH_BLOCKING=1 (optional, for debugging)
     """
+    # torch.compile determinism: single-threaded compilation for reproducible kernels
+    os.environ.setdefault("TORCHINDUCTOR_COMPILE_THREADS", "1")
+
     # Set seeds first
     state = set_seed(seed)
 

@@ -33,8 +33,9 @@
 
 set -euo pipefail
 
-# Determinism: required for cuBLAS reproducibility
-export CUBLAS_WORKSPACE_CONFIG=:4096:8
+# Determinism settings
+export CUBLAS_WORKSPACE_CONFIG=:4096:8        # cuBLAS reproducibility
+export TORCHINDUCTOR_COMPILE_THREADS=1        # Single-threaded torch.compile for reproducible kernels
 
 # Configuration
 OUTPUT_BASE="${1:?Usage: $0 <output_dir>}"
