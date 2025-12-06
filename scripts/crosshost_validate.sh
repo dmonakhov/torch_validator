@@ -18,8 +18,8 @@
 #
 # Environment variables:
 #   GOLDEN_HOST   - GPU UUID of reference host (for auto mode)
-#   DURATION      - Test duration in seconds (default: 300)
-#   MODEL_SIZE    - Model size: small, medium, large (default: small)
+#   STEPS         - Number of steps to run (default: 250)
+#   MODEL_SIZE    - Model size: small, medium, large (default: large)
 #   NPROC         - Number of GPUs per node (default: 8)
 #
 
@@ -30,7 +30,7 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 
 GOLDEN_DIR="${1:?Usage: $0 <golden_dir|auto> <output_base>}"
 OUTPUT_BASE="${2:?Usage: $0 <golden_dir|auto> <output_base>}"
-DURATION="${DURATION:-300}"
+STEPS="${STEPS:-250}"  # Explicit step count for reproducibility
 MODEL_SIZE="${MODEL_SIZE:-large}"  # Match production (malibu_v2_mini: 32 layers, 4096 dim)
 NPROC="${NPROC:-8}"
 
@@ -87,7 +87,7 @@ echo "This Host:       ${HOSTNAME} (${GPU_UUID})"
 echo "Golden From:     ${GOLDEN_GPU_UUID}"
 echo "Golden Dir:      ${GOLDEN_DIR}"
 echo "Output Dir:      ${HOST_DIR}"
-echo "Duration:        ${DURATION}s"
+echo "Steps:           ${STEPS}"
 echo "Model Size:      ${MODEL_SIZE}"
 echo "Num GPUs:        ${NPROC}"
 echo "============================================================"
@@ -117,7 +117,7 @@ mkdir -p "${VALIDATE_DIR}"
 torchrun --nproc_per_node=${NPROC} \
     -m torch_validator.stress_tests.runner \
     --test compile \
-    --duration ${DURATION} \
+    --steps ${STEPS} \
     --model-size ${MODEL_SIZE} \
     --validate \
     --golden "${GOLDEN_DIR}" \

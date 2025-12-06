@@ -9,8 +9,8 @@
 #   # On shared FS, from torch_validator directory:
 #   ./scripts/multihost_validate.sh /shared/validation_results
 #
-#   # Or with custom duration (default: 300s = 5min)
-#   DURATION=600 ./scripts/multihost_validate.sh /shared/validation_results
+#   # Or with custom step count (default: 250 steps)
+#   STEPS=500 ./scripts/multihost_validate.sh /shared/validation_results
 #
 #   # Or with specific model size (default: large to match production)
 #   MODEL_SIZE=small ./scripts/multihost_validate.sh /shared/validation_results
@@ -38,7 +38,7 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 
 # Configuration
 OUTPUT_BASE="${1:?Usage: $0 <output_dir>}"
-DURATION="${DURATION:-300}"
+STEPS="${STEPS:-250}"  # Explicit step count for reproducibility
 MODEL_SIZE="${MODEL_SIZE:-large}"  # Match production (malibu_v2_mini: 32 layers, 4096 dim)
 NPROC="${NPROC:-8}"
 
@@ -72,7 +72,7 @@ echo "Timestamp:    $(date -Iseconds)"
 echo "Hostname:     ${HOSTNAME}"
 echo "GPU UUID:     ${GPU_UUID}"
 echo "Output Dir:   ${HOST_DIR}"
-echo "Duration:     ${DURATION}s"
+echo "Steps:        ${STEPS}"
 echo "Model Size:   ${MODEL_SIZE}"
 echo "Num GPUs:     ${NPROC}"
 echo "============================================================"
@@ -92,7 +92,7 @@ mkdir -p "${RECORD_DIR}"
 torchrun --nproc_per_node=${NPROC} \
     -m torch_validator.stress_tests.runner \
     --test compile \
-    --duration ${DURATION} \
+    --steps ${STEPS} \
     --model-size ${MODEL_SIZE} \
     --output "${RECORD_DIR}" \
     2>&1 | tee "${HOST_DIR}/record.log"
@@ -114,7 +114,7 @@ mkdir -p "${VALIDATE_DIR}"
 torchrun --nproc_per_node=${NPROC} \
     -m torch_validator.stress_tests.runner \
     --test compile \
-    --duration ${DURATION} \
+    --steps ${STEPS} \
     --model-size ${MODEL_SIZE} \
     --validate \
     --golden "${RECORD_DIR}" \

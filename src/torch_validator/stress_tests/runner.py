@@ -167,6 +167,7 @@ def run_test(test_cls: Type[StressTest], config: StressTestConfig) -> Dict:
         compile_config = CompileTestConfig(
             mode=config.mode,
             duration_override=config.duration_override,
+            max_steps=config.max_steps,
             check_interval=config.check_interval,
             seed=config.seed,
             hidden_dim=config.hidden_dim,
@@ -219,6 +220,11 @@ def main():
         "--duration",
         type=int,
         help="Override duration in seconds"
+    )
+    parser.add_argument(
+        "--steps",
+        type=int,
+        help="Run exactly this many steps (overrides duration)"
     )
 
     # Validation mode
@@ -302,6 +308,7 @@ def main():
     config = StressTestConfig(
         mode=args.mode,
         duration_override=args.duration,
+        max_steps=args.steps,
         check_interval=args.check_interval,
         seed=args.seed,
         dtype=args.dtype,

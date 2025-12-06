@@ -25,8 +25,9 @@ class StressTestConfig:
     # Duration modes
     mode: str = "quick"  # "smoke" (150s), "quick" (600s), or "long" (3600s)
 
-    # Override duration (seconds)
+    # Override duration (seconds) or max steps
     duration_override: Optional[int] = None
+    max_steps: Optional[int] = None  # If set, run exactly this many steps
 
     # Verification
     check_interval: int = 10  # Verify every N steps
@@ -315,8 +316,12 @@ class StressTest(ABC):
         """Clean up test resources."""
         pass
 
-    def _should_continue(self) -> bool:
+    def _should_continue(self, current_step: int) -> bool:
         """Check if test should continue. Rank 0 decides, broadcasts to all."""
+        # If max_steps is set, use step-based termination (simpler, no broadcast needed)
+        if self.config.max_steps is not None:
+            return current_step < self.config.max_steps
+
         if not dist.is_initialized():
             # Single GPU mode - just check time
             return (time.time() - self.start_time) < self.config.duration_sec
@@ -336,7 +341,10 @@ class StressTest(ABC):
 
     def run(self) -> Dict[str, Any]:
         """Run the stress test."""
-        logger.info(f"[{self.name}][rank {self.rank}] Starting test, duration={self.config.duration_sec}s")
+        if self.config.max_steps is not None:
+            logger.info(f"[{self.name}][rank {self.rank}] Starting test, max_steps={self.config.max_steps}")
+        else:
+            logger.info(f"[{self.name}][rank {self.rank}] Starting test, duration={self.config.duration_sec}s")
 
         torch.manual_seed(self.config.seed + self.rank)
         if torch.cuda.is_available():
@@ -353,8 +361,11 @@ class StressTest(ABC):
                 if step % self.config.check_interval == 0:
                     self._verify_step(step, checksum)
                     # Coordinated shutdown check - all ranks check together
-                    if not self._should_continue():
-                        logger.info(f"[{self.name}][rank {self.rank}] Duration reached, stopping at step {step}")
+                    if not self._should_continue(step):
+                        if self.config.max_steps is not None:
+                            logger.info(f"[{self.name}][rank {self.rank}] Max steps reached, stopping at step {step}")
+                        else:
+                            logger.info(f"[{self.name}][rank {self.rank}] Duration reached, stopping at step {step}")
                         break
 
                 step += 1
