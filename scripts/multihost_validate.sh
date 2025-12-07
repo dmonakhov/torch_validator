@@ -15,6 +15,9 @@
 #   # Or with specific model size (default: large to match production)
 #   MODEL_SIZE=small ./scripts/multihost_validate.sh /shared/validation_results
 #
+#   # Enable portable determinism (bundle compile caches with golden)
+#   PORTABLE=1 ./scripts/multihost_validate.sh /shared/validation_results
+#
 # Output structure:
 #   /shared/validation_results/
 #     GPU-abc123.../              # Directory per host (first GPU UUID)
@@ -22,6 +25,9 @@
 #       record/                   # Golden data from record run
 #         compile_rank0.golden.json
 #         compile_rank0.log.json
+#         cache/                  # Portable compile caches (if PORTABLE=1)
+#           triton/               # Triton compiled kernels
+#           inductor/             # TorchInductor compiled kernels
 #         ...
 #       validate/                 # Validation results
 #         summary.json
@@ -42,6 +48,13 @@ OUTPUT_BASE="${1:?Usage: $0 <output_dir>}"
 STEPS="${STEPS:-250}"  # Explicit step count for reproducibility
 MODEL_SIZE="${MODEL_SIZE:-large}"  # Match production (malibu_v2_mini: 32 layers, 4096 dim)
 NPROC="${NPROC:-8}"
+PORTABLE="${PORTABLE:-1}"  # Enable portable determinism by default (bundle compile caches)
+
+# Build portable flag
+PORTABLE_FLAG=""
+if [[ "$PORTABLE" == "1" ]]; then
+    PORTABLE_FLAG="--portable"
+fi
 
 # Get first GPU UUID for unique directory name
 get_gpu_uuid() {
@@ -76,6 +89,7 @@ echo "Output Dir:   ${HOST_DIR}"
 echo "Steps:        ${STEPS}"
 echo "Model Size:   ${MODEL_SIZE}"
 echo "Num GPUs:     ${NPROC}"
+echo "Portable:     ${PORTABLE} (bundle compile caches)"
 echo "============================================================"
 echo
 
@@ -96,6 +110,7 @@ torchrun --nproc_per_node=${NPROC} \
     --steps ${STEPS} \
     --model-size ${MODEL_SIZE} \
     --output "${RECORD_DIR}" \
+    ${PORTABLE_FLAG} \
     2>&1 | tee "${HOST_DIR}/record.log"
 
 RECORD_STATUS=$?
@@ -120,6 +135,7 @@ torchrun --nproc_per_node=${NPROC} \
     --validate \
     --golden "${RECORD_DIR}" \
     --output "${VALIDATE_DIR}" \
+    ${PORTABLE_FLAG} \
     2>&1 | tee "${HOST_DIR}/validate.log"
 
 VALIDATE_STATUS=$?
@@ -146,6 +162,9 @@ echo
 echo "Output directory: ${HOST_DIR}"
 echo "  env_fingerprint.json  - System configuration"
 echo "  record/               - Golden reference data"
+if [[ "$PORTABLE" == "1" ]]; then
+echo "  record/cache/         - Portable compile caches (Triton + Inductor)"
+fi
 echo "  validate/             - Validation results"
 echo "  record.log            - Record run output"
 echo "  validate.log          - Validation run output"
