@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 class LocalTestConfig:
     """Configuration for local determinism test."""
     seed: int = 42  # Same seed for ALL GPUs
-    steps: int = 250
+    steps: int = 5000 # for large model runtime is ~1hour
     check_interval: int = 10
     hidden_dim: int = 4096
     num_layers: int = 32
