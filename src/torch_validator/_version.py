@@ -7,7 +7,7 @@ Git commit is read dynamically at runtime from the source directory.
 import subprocess
 from pathlib import Path
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Cached git info (computed once on first access)
 _git_info_cache = None
