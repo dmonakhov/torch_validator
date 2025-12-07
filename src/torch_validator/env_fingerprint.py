@@ -5,6 +5,11 @@ Used to identify differences between hosts that may cause deterministic
 divergence in distributed training.
 """
 
+import warnings
+
+# Suppress import order warning when running as module (-m torch_validator.env_fingerprint)
+warnings.filterwarnings("ignore", message="found in sys.modules")
+
 import json
 import os
 import platform

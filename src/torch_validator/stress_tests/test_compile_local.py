@@ -24,7 +24,7 @@ import struct
 import sys
 import time
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 import torch
 import torch.distributed as dist
@@ -336,7 +336,9 @@ def main():
     args = parser.parse_args()
 
     # Initialize distributed
-    dist.init_process_group(backend="nccl")
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    torch.cuda.set_device(local_rank)
+    dist.init_process_group(backend="nccl", device_id=torch.device(f"cuda:{local_rank}"))
     rank = dist.get_rank()
 
     # Model presets

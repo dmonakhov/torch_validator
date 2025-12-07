@@ -169,8 +169,9 @@ def setup_distributed(timeout_sec: int = 60):
     # Check if running under torchrun
     if "RANK" in os.environ:
         timeout = timedelta(seconds=timeout_sec)
-        dist.init_process_group(backend="nccl", timeout=timeout)
-        torch.cuda.set_device(int(os.environ.get("LOCAL_RANK", 0)))
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        torch.cuda.set_device(local_rank)
+        dist.init_process_group(backend="nccl", timeout=timeout, device_id=torch.device(f"cuda:{local_rank}"))
         logger.info(
             f"Initialized distributed: rank={dist.get_rank()}, world={dist.get_world_size()}, "
             f"timeout={timeout_sec}s"
