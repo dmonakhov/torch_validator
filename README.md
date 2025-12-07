@@ -3,6 +3,7 @@
 Hardware validation for LLM training via golden reference comparison.
 
 Detects silent GPU corruption by comparing training metrics against a known-good reference.
+Includes stress tests and local GPU determinism checks to identify faulty hardware.
 
 ## Quick Start
 
@@ -81,12 +82,12 @@ if not result.passed:
 
 For each training step, the verifier compares:
 
-| Metric | Description | Default Tolerance |
-|--------|-------------|-------------------|
-| Loss | Training loss value | rtol=1e-5, atol=1e-8 |
-| Grad Norm | L2 norm of all gradients | rtol=1e-4, atol=1e-8 |
-| Weight Norm | L2 norm of all weights | rtol=1e-5, atol=1e-8 |
-| Checksum | MD5 hash of model parameters | Exact match |
+| Metric      | Description                  | Default Tolerance    |
+|-------------+------------------------------+----------------------|
+| Loss        | Training loss value          | rtol=1e-5, atol=1e-8 |
+| Grad Norm   | L2 norm of all gradients     | rtol=1e-4, atol=1e-8 |
+| Weight Norm | L2 norm of all weights       | rtol=1e-5, atol=1e-8 |
+| Checksum    | MD5 hash of model parameters | Exact match          |
 
 ## TorchTitan Integration
 
@@ -165,11 +166,13 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 
 ## Golden Data Format
 
-Golden data is stored as JSON:
+Golden data is stored as JSON with version tracking:
 
 ```json
 {
   "version": "1.0",
+  "torch_validator_version": "0.2.0",
+  "torch_validator_commit": "abc1234",
   "seed_state": {
     "python_seed": 42,
     "torch_seed": 42,
@@ -191,6 +194,8 @@ Golden data is stored as JSON:
   ]
 }
 ```
+
+Version info is validated on load - mismatches trigger warnings.
 
 ## Validation Report
 
@@ -227,13 +232,20 @@ Standalone stress tests to expose hardware faults without full training setup.
 
 ### Available Tests
 
-| Test | Purpose | Distributed |
-|------|---------|-------------|
-| `memory` | HBM bandwidth saturation | No |
-| `nccl_allreduce` | AllReduce collective stress | Yes |
-| `nccl_mixed` | Combined NCCL patterns | Yes |
-| `fsdp_pattern` | FSDP communication simulation | Yes |
-| `transformer` | Minimal LLaMA3-like model + FSDP | Yes |
+| Test                 | Purpose                                   | Distributed |
+|----------------------+-------------------------------------------+-------------|
+| `memory`             | HBM bandwidth saturation                  | No          |
+| `memory_pattern`     | Memory access pattern stress              | No          |
+| `dense_local`        | Local dense computation                   | No          |
+| `nccl_allreduce`     | AllReduce collective stress               | Yes         |
+| `nccl_allgather`     | AllGather collective stress               | Yes         |
+| `nccl_reducescatter` | ReduceScatter collective stress           | Yes         |
+| `nccl_mixed`         | Combined NCCL patterns                    | Yes         |
+| `fsdp_pattern`       | FSDP communication simulation             | Yes         |
+| `fsdp_layer`         | FSDP layer-wise stress                    | Yes         |
+| `transformer`        | Minimal LLaMA3-like model + FSDP          | Yes         |
+| `compile`            | torch.compile determinism (cross-host)    | Yes         |
+| `compile_disabled`   | Same as compile but without torch.compile | Yes         |
 
 ### Usage
 
@@ -253,30 +265,86 @@ torchrun --nproc_per_node=8 -m torch_validator.stress_tests.runner \
 # Single-GPU memory test (no distributed)
 python -m torch_validator.stress_tests.runner --test memory --mode quick --output golden/
 
-# With GPU monitoring (requires pynvml)
-torchrun --nproc_per_node=8 -m torch_validator.stress_tests.runner \
-    --test transformer --mode long --nvml --output golden/
-
 # List all available tests
 python -m torch_validator.stress_tests.runner --list
 ```
 
+### Local GPU Determinism Test
+
+Identifies faulty GPUs without needing golden files or cross-host comparison.
+All GPUs on a host run identical workloads and compare via all_gather.
+
+```bash
+# Run on single host - all 8 GPUs must match
+torchrun --nproc_per_node=8 -m torch_validator.stress_tests.test_compile_local --steps 500
+
+# If any GPU diverges, it logs the bad GPU UUID
+```
+
 ### Duration Modes
 
+- `--mode smoke`: 150 seconds (2.5 minutes)
 - `--mode quick`: 600 seconds (10 minutes)
 - `--mode long`: 3600 seconds (1 hour)
 - `--duration N`: Override with custom duration in seconds
+- `--steps N`: Run exactly N steps (overrides duration)
 
 ### Test Groups
 
 - `all`: All tests
 - `quick_suite`: memory, nccl_mixed, fsdp_layer, transformer
-- `local`: Single-GPU tests (memory, dense_local)
-- `nccl_tests`: All NCCL tests
+- `determinism_suite`: compile, compile_disabled
+- `local`: Single-GPU tests (memory, memory_pattern, dense_local)
+- `nccl_tests`: All NCCL collective tests
 - `fsdp_tests`: All FSDP tests
+- `memory_tests`: memory, memory_pattern
+- `model_tests`: transformer, dense_local
+- `compile_tests`: compile, compile_disabled
+
+### Model Size Presets
+
+- `--model-size small`: ~1B params (hidden=2048, layers=16)
+- `--model-size medium`: ~3B params (hidden=3072, layers=24)
+- `--model-size large`: ~7B params (hidden=4096, layers=32)
+
+### Helper Scripts
+
+Convenience scripts in `scripts/` directory:
+
+| Script                       | Purpose                            |
+|------------------------------+------------------------------------|
+| `run_smoke.sh`               | 2.5 minute smoke test              |
+| `run_quick.sh`               | 10 minute quick test               |
+| `run_long.sh`                | 1 hour stress test                 |
+| `run_memory.sh`              | Memory bandwidth test              |
+| `run_suite.sh`               | Run full test suite                |
+| `test_local_determinism.sh`  | Local GPU determinism check        |
+| `multihost_validate.sh`      | Multi-host validation on shared FS |
+| `validate_against_golden.sh` | Cross-host golden validation       |
+
+**Examples:**
+
+```bash
+# Quick test - record then validate
+./scripts/run_quick.sh record golden/
+./scripts/run_quick.sh validate golden/
+
+# With custom GPU count and model size
+NGPU=4 SIZE=small ./scripts/run_quick.sh record golden/
+
+# Local determinism test (find bad GPUs)
+./scripts/test_local_determinism.sh
+STEPS=500 ./scripts/test_local_determinism.sh
+
+# Multi-host validation (on shared filesystem)
+./scripts/multihost_validate.sh /shared/validation_results
+
+# With portable determinism (bundle compile caches)
+PORTABLE=1 ./scripts/multihost_validate.sh /shared/validation_results
+```
 
 ## Requirements
 
 - Python >= 3.9
 - PyTorch >= 2.0.0
-- pynvml (optional, for GPU monitoring)
+- nvidia-ml-py >= 12.0.0 (for GPU UUID detection)
