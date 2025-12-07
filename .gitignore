@@ -48,3 +48,5 @@ golden*.json
 
 # Logs
 *.log
+e2e
+logs

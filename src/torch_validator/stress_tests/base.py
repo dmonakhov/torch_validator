@@ -15,6 +15,8 @@ from typing import Any, Dict, List, Optional
 import torch
 import torch.distributed as dist
 
+from torch_validator._version import get_version_info
+
 logger = logging.getLogger(__name__)
 
 
@@ -210,7 +212,30 @@ class StressTest(ABC):
         with open(golden_file) as f:
             data = json.load(f)
 
-        # New format: {"checksums": {"0": "abc...", "10": "def..."}}
+        # Check version compatibility
+        golden_version = data.get("version_info", {})
+        current_version = get_version_info()
+
+        if golden_version:
+            golden_commit = golden_version.get("git_commit", "unknown")
+            current_commit = current_version["git_commit"]
+
+            if golden_commit != "unknown" and current_commit != "unknown":
+                if golden_commit != current_commit:
+                    logger.warning(
+                        f"[{self.name}][rank {self.rank}] VERSION MISMATCH: "
+                        f"golden={golden_commit[:8]}, current={current_commit[:8]}"
+                    )
+                    logger.warning(
+                        "  Golden was recorded with different code version. "
+                        "Results may not be comparable!"
+                    )
+                else:
+                    logger.info(
+                        f"[{self.name}][rank {self.rank}] Version match: {current_commit[:8]}"
+                    )
+
+        # Load checksums: {"checksums": {"0": "abc...", "10": "def..."}}
         for step_str, checksum in data["checksums"].items():
             step = int(step_str)
             self.golden_metrics[step] = StepMetrics(step=step, elapsed_sec=0, checksum=checksum)
@@ -225,11 +250,12 @@ class StressTest(ABC):
         output_dir = Path(self.config.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Golden file: just checksums (stable between runs)
+        # Golden file: checksums + version info for reproducibility
         golden_file = output_dir / f"{self.name}_rank{self.rank}.golden.json"
         golden_data = {
             "test": self.name,
             "rank": self.rank,
+            "version_info": get_version_info(),
             "checksums": {str(m.step): m.checksum for m in self.metrics},
         }
         with open(golden_file, "w") as f:
@@ -298,6 +324,32 @@ class StressTest(ABC):
                 f"[{self.name}][rank {self.rank}] Step {step}: CHECKSUM MISMATCH - "
                 f"expected={golden.checksum}, actual={checksum}"
             )
+
+            # First step mismatch indicates environment/cache incompatibility
+            if step == 0 or (len(self.failures) == 1 and step <= 5):
+                logger.error(
+                    f"[{self.name}][rank {self.rank}] EARLY MISMATCH at step {step} - "
+                    "this likely indicates ENVIRONMENT INCOMPATIBILITY, not hardware issues:"
+                )
+                logger.error(
+                    "  Possible causes:"
+                )
+                logger.error(
+                    "  1. Golden was recorded with different PyTorch/CUDA/driver version"
+                )
+                logger.error(
+                    "  2. Compile cache mismatch - try using --portable flag"
+                )
+                logger.error(
+                    "  3. Different GPU architecture (e.g., H100 vs A100)"
+                )
+                logger.error(
+                    "  4. Missing or corrupted cache directory"
+                )
+                logger.error(
+                    "  Recommended: Re-record golden on this host or use shared portable cache"
+                )
+
             return False
 
         if should_log:

@@ -20,6 +20,9 @@ Usage:
     # result.passed -> True/False
 """
 
+# Import version first (no torch dependency)
+from torch_validator._version import __version__, get_version_info
+
 from torch_validator.verifier import GoldenVerifier, ValidationResult
 from torch_validator.metrics import MetricsCollector
 from torch_validator.deterministic import set_seed, set_deterministic_mode, get_seed_state
@@ -31,8 +34,9 @@ from torch_validator.env_fingerprint import (
     EnvFingerprint,
 )
 
-__version__ = "0.1.0"
 __all__ = [
+    "__version__",
+    "get_version_info",
     "GoldenVerifier",
     "ValidationResult",
     "MetricsCollector",
