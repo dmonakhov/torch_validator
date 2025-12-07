@@ -19,13 +19,41 @@ Usage:
         --test all --mode long --validate --golden golden/
 """
 
+# CRITICAL: Set cache env vars BEFORE importing torch!
+# torch caches these paths at import time.
 import argparse
-import json
-import logging
 import os
 import sys
-from datetime import timedelta
 from pathlib import Path
+
+
+def _setup_portable_cache_early():
+    """Parse just --portable and --golden args to set cache dirs before torch import."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--portable", "-p", action="store_true")
+    parser.add_argument("--validate", "-v", action="store_true")
+    parser.add_argument("--golden", "-g", type=str)
+    args, _ = parser.parse_known_args()
+
+    if args.portable and args.validate and args.golden:
+        golden_path = Path(args.golden)
+        cache_dir = golden_path / "cache"
+        triton_cache = cache_dir / "triton"
+        inductor_cache = cache_dir / "inductor"
+
+        if triton_cache.exists():
+            os.environ["TRITON_CACHE_DIR"] = str(triton_cache)
+        if inductor_cache.exists():
+            os.environ["TORCHINDUCTOR_CACHE_DIR"] = str(inductor_cache)
+
+
+# Set cache dirs before any torch import
+_setup_portable_cache_early()
+
+# Now safe to import torch
+import json
+import logging
+from datetime import timedelta
 from typing import Dict, List, Type
 
 import torch
@@ -44,7 +72,7 @@ from torch_validator.stress_tests.test_nccl import (
 from torch_validator.stress_tests.test_fsdp import FSDPPatternTest, FSDPLayerTest
 from torch_validator.stress_tests.test_transformer import MinimalTransformerTest, MinimalDenseTest
 from torch_validator.stress_tests.test_compile import CompileDeterminismTest, CompileDisabledTest, CompileTestConfig
-from torch_validator.deterministic import load_compile_cache, save_compile_cache
+from torch_validator.deterministic import save_compile_cache
 
 # Registry of available tests
 TEST_REGISTRY: Dict[str, Type[StressTest]] = {
@@ -327,10 +355,16 @@ def main():
         **model_config,
     )
 
-    # Portable determinism: load cached kernels before any torch.compile
+    # Portable determinism: log cache setup (env vars already set before torch import)
     if args.portable and args.validate and args.golden:
-        if load_compile_cache(args.golden):
-            logger.info("Portable determinism: loaded compile cache from golden directory")
+        triton_dir = os.environ.get("TRITON_CACHE_DIR")
+        inductor_dir = os.environ.get("TORCHINDUCTOR_CACHE_DIR")
+        if triton_dir or inductor_dir:
+            logger.info(f"Portable determinism: using cache from golden directory")
+            if triton_dir:
+                logger.info(f"  TRITON_CACHE_DIR={triton_dir}")
+            if inductor_dir:
+                logger.info(f"  TORCHINDUCTOR_CACHE_DIR={inductor_dir}")
         else:
             logger.warning("Portable determinism: no cache found in golden directory")
 
