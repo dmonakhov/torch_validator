@@ -44,6 +44,7 @@ from torch_validator.stress_tests.test_nccl import (
 from torch_validator.stress_tests.test_fsdp import FSDPPatternTest, FSDPLayerTest
 from torch_validator.stress_tests.test_transformer import MinimalTransformerTest, MinimalDenseTest
 from torch_validator.stress_tests.test_compile import CompileDeterminismTest, CompileDisabledTest, CompileTestConfig
+from torch_validator.deterministic import load_compile_cache, save_compile_cache
 
 # Registry of available tests
 TEST_REGISTRY: Dict[str, Type[StressTest]] = {
@@ -267,6 +268,12 @@ def main():
         "--timeout", type=int, default=60,
         help="NCCL operation timeout in seconds (default: 60). Raises error instead of hanging."
     )
+    parser.add_argument(
+        "--portable", "-p",
+        action="store_true",
+        help="Enable portable determinism: bundle Triton/Inductor caches with golden. "
+             "In record mode, saves caches to output dir. In validate mode, uses cached kernels."
+    )
 
     args = parser.parse_args()
 
@@ -316,8 +323,16 @@ def main():
         output_dir=args.output,
         golden_dir=args.golden,
         validate_mode=args.validate,
+        portable=args.portable,
         **model_config,
     )
+
+    # Portable determinism: load cached kernels before any torch.compile
+    if args.portable and args.validate and args.golden:
+        if load_compile_cache(args.golden):
+            logger.info("Portable determinism: loaded compile cache from golden directory")
+        else:
+            logger.warning("Portable determinism: no cache found in golden directory")
 
     logger.info(f"Model config: {args.model_size} preset, {model_config}")
 
@@ -390,6 +405,12 @@ def main():
                 "all_passed": all_passed,
             }, f, indent=2)
         logger.info(f"Summary saved to {summary_file}")
+
+        # Portable determinism: save compile cache with golden
+        if args.portable and not args.validate:
+            cache_path = save_compile_cache(args.output, rank=0)
+            if cache_path:
+                logger.info(f"Portable determinism: saved compile cache to {cache_path}")
 
     # Cleanup distributed
     if dist.is_initialized():

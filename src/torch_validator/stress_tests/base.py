@@ -52,6 +52,9 @@ class StressTestConfig:
     golden_dir: Optional[str] = None
     validate_mode: bool = False  # True = validate against golden
 
+    # Portable determinism - bundle compile caches with golden
+    portable: bool = False
+
     @property
     def duration_sec(self) -> int:
         if self.duration_override:
