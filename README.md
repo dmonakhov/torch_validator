@@ -5,10 +5,14 @@ Hardware validation for LLM training via golden reference comparison.
 Detects silent GPU corruption by comparing training metrics against a known-good reference.
 Includes stress tests and local GPU determinism checks to identify faulty hardware.
 
+**Repository**: https://github.com/dmonakhov/torch_validator
+
 ## Quick Start
 
 ```bash
-# Install
+# Clone and install
+git clone https://github.com/dmonakhov/torch_validator.git
+cd torch_validator
 pip install -e .
 
 # Step 1: Record golden data on known-good host
@@ -341,6 +345,21 @@ STEPS=500 ./scripts/test_local_determinism.sh
 
 # With portable determinism (bundle compile caches)
 PORTABLE=1 ./scripts/multihost_validate.sh /shared/validation_results
+```
+
+### Container
+
+Build and run tests in a container (CUDA 12.8, PyTorch 2.6):
+
+```bash
+# Build image
+make -C container build
+
+# Run smoke test (auto-detects GPUs, runs 3000 steps)
+make -C container smoke-test
+
+# Custom step count
+make -C container smoke-test STEPS=500
 ```
 
 ## Requirements
