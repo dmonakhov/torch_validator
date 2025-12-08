@@ -83,7 +83,7 @@ if not result.passed:
 For each training step, the verifier compares:
 
 | Metric      | Description                  | Default Tolerance    |
-|-------------+------------------------------+----------------------|
+|-------------|------------------------------|----------------------|
 | Loss        | Training loss value          | rtol=1e-5, atol=1e-8 |
 | Grad Norm   | L2 norm of all gradients     | rtol=1e-4, atol=1e-8 |
 | Weight Norm | L2 norm of all weights       | rtol=1e-5, atol=1e-8 |
@@ -233,7 +233,7 @@ Standalone stress tests to expose hardware faults without full training setup.
 ### Available Tests
 
 | Test                 | Purpose                                   | Distributed |
-|----------------------+-------------------------------------------+-------------|
+|----------------------|-------------------------------------------|-------------|
 | `memory`             | HBM bandwidth saturation                  | No          |
 | `memory_pattern`     | Memory access pattern stress              | No          |
 | `dense_local`        | Local dense computation                   | No          |
@@ -312,7 +312,7 @@ torchrun --nproc_per_node=8 -m torch_validator.stress_tests.test_compile_local -
 Convenience scripts in `scripts/` directory:
 
 | Script                       | Purpose                            |
-|------------------------------+------------------------------------|
+|------------------------------|------------------------------------|
 | `run_smoke.sh`               | 2.5 minute smoke test              |
 | `run_quick.sh`               | 10 minute quick test               |
 | `run_long.sh`                | 1 hour stress test                 |
