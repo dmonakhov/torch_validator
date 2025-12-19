@@ -236,9 +236,12 @@ def run_local_test(config: LocalTestConfig) -> dict:
     torch.cuda.set_device(device)
     dtype = getattr(torch, config.dtype)
 
-    # Get GPU UUID for this process (only one GPU visible)
+    # Get GPU UUID for this process
+    # Note: pynvml sees all GPUs regardless of CUDA_VISIBLE_DEVICES
+    # Use _local_rank (saved at module load) to get correct UUID
     gpu_uuids = get_gpu_uuids()
-    my_uuid = gpu_uuids[0] if gpu_uuids else "unknown"
+    local_rank_idx = int(_local_rank) if _local_rank is not None else rank
+    my_uuid = gpu_uuids[local_rank_idx] if local_rank_idx < len(gpu_uuids) else "unknown"
     # Gather all UUIDs for logging
     all_uuids = [None] * world_size
     dist.all_gather_object(all_uuids, my_uuid)
