@@ -14,11 +14,18 @@ Usage:
     torchrun --nproc_per_node=8 -m torch_validator.stress_tests.test_compile_local --steps 500
 """
 
+# CRITICAL: Set CUDA_VISIBLE_DEVICES before importing torch
+# This ensures each process sees its GPU as cuda:0, which makes
+# Triton/Inductor compile identical kernels across all ranks.
+import os
+_local_rank = os.environ.get("LOCAL_RANK")
+if _local_rank is not None:
+    os.environ["CUDA_VISIBLE_DEVICES"] = _local_rank
+
 import argparse
 import ctypes
 import hashlib
 import logging
-import os
 import socket
 import struct
 import sys
@@ -224,13 +231,17 @@ def run_local_test(config: LocalTestConfig) -> dict:
 
     rank = dist.get_rank()
     world_size = dist.get_world_size()
-    device = torch.device(f"cuda:{rank}")
+    # Each process sees only its GPU as cuda:0 (CUDA_VISIBLE_DEVICES set at import)
+    device = torch.device("cuda:0")
     torch.cuda.set_device(device)
     dtype = getattr(torch, config.dtype)
 
-    # Get GPU UUIDs
+    # Get GPU UUID for this process (only one GPU visible)
     gpu_uuids = get_gpu_uuids()
-    my_uuid = gpu_uuids[rank] if rank < len(gpu_uuids) else "unknown"
+    my_uuid = gpu_uuids[0] if gpu_uuids else "unknown"
+    # Gather all UUIDs for logging
+    all_uuids = [None] * world_size
+    dist.all_gather_object(all_uuids, my_uuid)
 
     if rank == 0:
         logger.info("=" * 60)
@@ -244,7 +255,7 @@ def run_local_test(config: LocalTestConfig) -> dict:
         logger.info(f"Compile: {config.use_compile}")
         logger.info(f"Version: {get_version_info()}")
         logger.info("GPU UUIDs:")
-        for i, uuid in enumerate(gpu_uuids):
+        for i, uuid in enumerate(all_uuids):
             logger.info(f"  rank {i}: {uuid}")
         logger.info("=" * 60)
 
@@ -327,12 +338,12 @@ def run_local_test(config: LocalTestConfig) -> dict:
 
             if not all_equal:
                 divergent = get_divergent_ranks(cs_tensor, rank, world_size)
-                divergent_uuids = [gpu_uuids[r] if r < len(gpu_uuids) else "unknown" for r in divergent]
+                divergent_uuids = [all_uuids[r] if r < len(all_uuids) else "unknown" for r in divergent]
                 failures.append({"step": step, "divergent_ranks": divergent, "divergent_uuids": divergent_uuids})
                 logger.error(f"[rank {rank}] Step {step}: DIVERGENCE - ranks {divergent} differ, my checksum={cs_str}")
                 if rank == 0:
                     for r in divergent:
-                        uuid = gpu_uuids[r] if r < len(gpu_uuids) else "unknown"
+                        uuid = all_uuids[r] if r < len(all_uuids) else "unknown"
                         logger.error(f"  BAD GPU: rank {r} -> {uuid}")
             elif should_log:
                 if rank == 0:
@@ -386,9 +397,10 @@ def main():
     args = parser.parse_args()
 
     # Initialize distributed
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    torch.cuda.set_device(local_rank)
-    dist.init_process_group(backend="nccl", device_id=torch.device(f"cuda:{local_rank}"))
+    # Note: CUDA_VISIBLE_DEVICES is set at module load time, so each process
+    # sees only its assigned GPU as cuda:0
+    torch.cuda.set_device(0)
+    dist.init_process_group(backend="nccl", device_id=torch.device("cuda:0"))
     rank = dist.get_rank()
 
     # Model presets
