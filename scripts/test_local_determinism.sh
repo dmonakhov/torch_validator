@@ -14,6 +14,7 @@
 #   STEPS=500 ./scripts/test_local_determinism.sh
 #   NPROC=4 ./scripts/test_local_determinism.sh
 #   NO_COMPILE=1 ./scripts/test_local_determinism.sh  # baseline without torch.compile
+#   NO_AUTOTUNE=1 ./scripts/test_local_determinism.sh # disable autotuning for guaranteed determinism
 
 set -euo pipefail
 
@@ -26,11 +27,15 @@ NPROC="${NPROC:-8}"
 STEPS="${STEPS:-5000}"
 MODEL_SIZE="${MODEL_SIZE:-large}"
 NO_COMPILE="${NO_COMPILE:-0}"
+NO_AUTOTUNE="${NO_AUTOTUNE:-0}"
 
 # Build arguments
 ARGS="--steps $STEPS --model-size $MODEL_SIZE"
 if [[ "$NO_COMPILE" == "1" ]]; then
     ARGS="$ARGS --no-compile"
+fi
+if [[ "$NO_AUTOTUNE" == "1" ]]; then
+    ARGS="$ARGS --no-autotune"
 fi
 
 echo "============================================================"
@@ -40,6 +45,7 @@ echo "GPUs:         $NPROC"
 echo "Steps:        $STEPS"
 echo "Model:        $MODEL_SIZE"
 echo "Compile:      $([ "$NO_COMPILE" == "1" ] && echo "disabled" || echo "enabled")"
+echo "Autotune:     $([ "$NO_AUTOTUNE" == "1" ] && echo "disabled" || echo "enabled")"
 echo "============================================================"
 echo
 

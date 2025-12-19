@@ -72,6 +72,7 @@ class LocalTestConfig:
     seq_len: int = 4096
     dtype: str = "bfloat16"
     use_compile: bool = True
+    no_autotune: bool = False  # Disable autotuning for guaranteed determinism
 
 
 class RMSNorm(nn.Module):
@@ -174,6 +175,21 @@ def set_deterministic_seed(seed: int):
         pass
 
 
+def disable_autotuning():
+    """Disable all inductor autotuning for guaranteed determinism.
+
+    This forces default kernel configs without benchmarking, eliminating
+    run-to-run variability from autotune timing. May reduce performance
+    by 10-30% but guarantees identical compilation across runs.
+    """
+    try:
+        torch._inductor.config.max_autotune = False
+        torch._inductor.config.max_autotune_pointwise = False
+        torch._inductor.config.max_autotune_gemm = False
+    except (AttributeError, ModuleNotFoundError):
+        pass
+
+
 def check_all_equal(checksum: torch.Tensor, rank: int, world_size: int) -> bool:
     """Check if all ranks have the same checksum using all_reduce."""
     # Gather all checksums
@@ -233,6 +249,12 @@ def run_local_test(config: LocalTestConfig) -> dict:
     # Set SAME seed on all GPUs
     set_deterministic_seed(config.seed)
 
+    # Disable autotuning if requested (for guaranteed determinism)
+    if config.no_autotune:
+        disable_autotuning()
+        if rank == 0:
+            logger.info("Autotuning disabled (--no-autotune)")
+
     # Create model (identical on all GPUs due to same seed)
     model = LocalTestModel(config).to(device=device, dtype=dtype)
 
@@ -246,6 +268,20 @@ def run_local_test(config: LocalTestConfig) -> dict:
     set_deterministic_seed(config.seed)
     x = torch.randn(config.batch_size, config.seq_len, config.hidden_dim,
                     device=device, dtype=dtype)
+
+    # Warmup pass: populate compile cache before validation
+    # This ensures all ranks have compiled and cached kernels before the test loop
+    if config.use_compile:
+        if rank == 0:
+            logger.info("Warming up compile cache...")
+        with torch.no_grad():
+            _ = model(x)
+        torch.cuda.synchronize()
+        dist.barrier()  # Ensure all ranks have compiled
+        # Reset input to ensure identical starting state
+        set_deterministic_seed(config.seed)
+        x = torch.randn(config.batch_size, config.seq_len, config.hidden_dim,
+                        device=device, dtype=dtype)
 
     # Verify input is identical across GPUs
     input_cs = compute_checksum_tensor(x)
@@ -331,6 +367,8 @@ def main():
     parser.add_argument("--hidden-dim", type=int, default=4096)
     parser.add_argument("--num-layers", type=int, default=32)
     parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile")
+    parser.add_argument("--no-autotune", action="store_true",
+                        help="Disable inductor autotuning (slower but guaranteed determinism)")
     parser.add_argument("--model-size", choices=["small", "medium", "large"], default="large")
 
     args = parser.parse_args()
@@ -357,6 +395,7 @@ def main():
         num_layers=args.num_layers or preset["num_layers"],
         intermediate_size=preset["intermediate_size"],
         use_compile=not args.no_compile,
+        no_autotune=args.no_autotune,
     )
 
     result = run_local_test(config)
