@@ -270,14 +270,24 @@ def run_local_test(config: LocalTestConfig) -> dict:
                     device=device, dtype=dtype)
 
     # Warmup pass: populate compile cache before validation
-    # This ensures all ranks have compiled and cached kernels before the test loop
+    # CRITICAL: Serialize compilation to avoid autotuning race conditions
+    # Rank 0 compiles first and populates the shared Triton/Inductor cache,
+    # then other ranks compile and hit the cache (getting identical kernels)
     if config.use_compile:
         if rank == 0:
-            logger.info("Warming up compile cache...")
-        with torch.no_grad():
-            _ = model(x)
-        torch.cuda.synchronize()
+            logger.info("Rank 0 warming up compile cache (others waiting)...")
+            with torch.no_grad():
+                _ = model(x)
+            torch.cuda.synchronize()
+        dist.barrier()  # Other ranks wait for rank 0 to finish compilation
+
+        # Now other ranks compile - they should hit rank 0's cached kernels
+        if rank != 0:
+            with torch.no_grad():
+                _ = model(x)
+            torch.cuda.synchronize()
         dist.barrier()  # Ensure all ranks have compiled
+
         # Reset input to ensure identical starting state
         set_deterministic_seed(config.seed)
         x = torch.randn(config.batch_size, config.seq_len, config.hidden_dim,
