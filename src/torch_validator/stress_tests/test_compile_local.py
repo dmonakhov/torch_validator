@@ -171,6 +171,8 @@ def set_deterministic_seed(seed: int):
     try:
         torch._inductor.config.deterministic_algorithms = True
         torch._inductor.config.fallback_random = True
+        # Skip on-device benchmarking that causes non-determinism
+        torch._inductor.config.deterministic = True
     except (AttributeError, ModuleNotFoundError):
         pass
 
